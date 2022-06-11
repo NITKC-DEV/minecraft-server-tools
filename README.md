@@ -21,3 +21,6 @@ Options:
 ## Roadmap
 - Githubを使用した同期
 - DDNSの設定
+
+## Build
+`gradle jpackage`
