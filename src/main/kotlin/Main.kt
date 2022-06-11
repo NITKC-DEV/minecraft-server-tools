@@ -55,8 +55,7 @@ fun main(args: Array<String>) {
 
     class Network : Subcommand("network", "ネットワークの設定をするます") {
 
-        val mode by argument(ArgType.Choice<NetworkMode>(), "モード")
-
+        val mode by argument(ArgType.Choice<NetworkMode>(), "mode")
 
 
         var ipv4 by option(ArgType.String, "ipv4", "i", "ぶち開けるipv4アドレスを指定します")
@@ -131,7 +130,11 @@ fun main(args: Array<String>) {
                             print("Enterで続行 変更する場合は右にIPv4アドレスを入力:")
                             ipv4 = readlnOrNull()?.ifEmpty { null } ?: ipv4
                             println("IPv4アドレス $ipv4 で続行します")
-                            val (TCPPorts, UDPPorts) = getPorts() ?: run { return }
+                            val (TCPPorts, UDPPorts) = getPorts() ?: run {
+                                cp.stop()
+                                cp.terminate()
+                                return
+                            }
 
                             println("UPnPのNAT設定してぶち開けるます")
                             Logger.setLogLevel(Logger.VERBOSE)
@@ -183,7 +186,11 @@ fun main(args: Array<String>) {
                         }
                         Close -> {
                             println("閉じます")
-                            val (TCPPorts, UDPPorts) = getPorts() ?: run { return }
+                            val (TCPPorts, UDPPorts) = getPorts() ?: run {
+                                cp.stop()
+                                cp.terminate()
+                                return
+                            }
                             println("対応デバイスを検索中")
                             cp.search("urn:schemas-upnp-org:service:WANPPPConnection:1")
                             while (supportedDevices.isEmpty()) {
@@ -220,8 +227,9 @@ fun main(args: Array<String>) {
                         }
                         else -> {}
                     }
-
-
+                    println("Clean Up")
+                    cp.stop()
+                    cp.terminate()
                 }
                 mode == DDNS -> TODO()
                 mode == Check -> TODO()

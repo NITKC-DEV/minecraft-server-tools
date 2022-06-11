@@ -48,10 +48,21 @@ tasks.jar {
 }
 
 runtime {
-    options.set( listOf("--strip-debug", "--compress", "2", "--no-header-files", "--no-man-pages"))
+
     additive.set(true)
     jpackage {
+        val currentOs = org.gradle.internal.os.OperatingSystem.current()
+       // skipInstaller=true
+
         imageName="mstools"
         mainClass="MainKt"
+        when{
+            currentOs.isWindows->{
+                imageOptions = listOf("--win-console")
+            }
+            currentOs.isLinux->{
+
+            }
+        }
     }
 }
