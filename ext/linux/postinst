@@ -1,0 +1,5 @@
+#!bin/sh
+
+echo /usr/bin/mstools にシンポジックリンクを作成します
+ln -s /opt/minecraft-server-tools/bin/mstools /usr/bin/mstools
+exit 0

@@ -9,7 +9,7 @@
         </config>
         <ContributedStateBase type="GradleRuntime">
           <config>
-            <option name="homePath" value="/home/naotiki/.sdkman/candidates/gradle/7.4.2" />
+            <option name="homePath" value="/home/naotiki/.sdkman/candidates/gradle/current" />
           </config>
         </ContributedStateBase>
         <ContributedStateBase type="JavaLanguageRuntime">

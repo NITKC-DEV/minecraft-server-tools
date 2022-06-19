@@ -48,20 +48,28 @@ tasks.jar {
 }
 
 runtime {
-
-    additive.set(true)
+    //additive.set(true)
     jpackage {
         val currentOs = org.gradle.internal.os.OperatingSystem.current()
-       // skipInstaller=true
-
+        //skipInstaller=true
         imageName="mstools"
         mainClass="MainKt"
+        installerOptions.add("--verbose")
+        //installerOptions.add("--temp")
+       // installerOptions.add("DTempFiles")
+
+
         when{
             currentOs.isWindows->{
-                imageOptions = listOf("--win-console")
+                resourceDir=file("$rootDir/ext/windows")
+                imageOptions.add( "--win-console")
+                outputDir="jpackage/windows"
             }
             currentOs.isLinux->{
+                resourceDir=file("$rootDir/ext/linux")
 
+                installerType="deb"
+                outputDir="jpackage/linux"
             }
         }
     }
