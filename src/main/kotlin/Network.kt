@@ -1,10 +1,11 @@
-import kotlinx.cli.ArgType
-import kotlinx.cli.Subcommand
+import NetworkMode.*
+import kotlinx.cli.*
 import net.mm2d.log.Logger
 import net.mm2d.upnp.*
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okio.IOException
 import java.net.InetAddress
-import NetworkMode.*
-import kotlinx.cli.ExperimentalCli
 
 enum class NetworkMode {
     Open,
@@ -12,6 +13,8 @@ enum class NetworkMode {
     DDNS,
     Check,
 }
+
+@Deprecated("init専用にするのでそのうち移動", level = DeprecationLevel.WARNING)
 fun getPorts(): Pair<List<Int>, List<Int>>? {
     println("TCPのポート番号を指定してください (Enterで変更せずに続行)")
     print("複数開ける場合は\",\"で区切ってください (例:80,8080) :")
@@ -35,17 +38,31 @@ fun getPorts(): Pair<List<Int>, List<Int>>? {
     }
     return t to u
 }
+
 @ExperimentalCli
-class Network : Subcommand("network", "ネットワークの設定をするます") {
+class Network(config: Config?) : Subcommand("network", "ネットワークの設定をするこまーんど") {
 
-    val mode by argument(ArgType.Choice<NetworkMode>(), "mode")
+    val mode by argument(ArgType.Choice<NetworkMode>(), "mode", "")
 
 
-    var ipv4 by option(ArgType.String, "ipv4", "i", "ぶち開けるipv4アドレスを指定します")
+    var ipv4 by option(ArgType.String, "ipv4", "i", "ぶち開けるipv4アドレスを指定します").default(config?.ipAddress.orEmpty())
+
+    var tcpPorts by option(ArgType.Int, "tcp", "t", "ぶち開けるTCPアドレスを指定 (','区切り)").delimiter(",")
+        .default(config?.tcpPorts.orEmpty())
+    var udpPorts by option(ArgType.Int, "udp", "u", "ぶち開けるUDPアドレスを指定 (','区切り)").delimiter(",")
+        .default(config?.udpPorts.orEmpty())
+
+    var ddnsNowUser by option(ArgType.String, "dnuser", "n", "DDNS now ユーザー名").default(config?.ddnsNowUser.orEmpty())
+    var ddnsNowPassword by option(
+        ArgType.String,
+        "dnpass",
+        "p",
+        "DDNS now パスワード"
+    ).default(config?.ddnsNowPassword.orEmpty())
 
     override fun execute() {
         when {
-            (mode == Open) || (mode == Close) -> {
+            (mode == Open) || (mode == Close) || (mode == Check) -> {
                 val supportedDevices = mutableListOf<Service>()
                 val cp = ControlPointFactory.create(Protocol.IP_V4_ONLY).also { cp ->
                     cp.addDiscoveryListener(object : ControlPoint.DiscoveryListener {
@@ -55,7 +72,6 @@ class Network : Subcommand("network", "ネットワークの設定をするま�
                             findServiceByType("urn:schemas-upnp-org:service:WANPPPConnection:1")
                                 ?: findServiceByType("urn:schemas-upnp-org:service:WANIPConnection:1")
                         }
-
                         override fun onDiscover(device: Device) {
 
                             getService(device)?.let {
@@ -82,21 +98,28 @@ class Network : Subcommand("network", "ネットワークの設定をするま�
 
                 when (mode) {
                     Open -> {
-                        ipv4 = ipv4 ?: try {
-                            InetAddress.getLocalHost().hostAddress
-                        } catch (e: Exception) {
-                            println("What The Fuck !?!?")
-                            throw e
-                        }
-                        println("IPv4アドレス:$ipv4")
-                        print("Enterで続行 変更する場合は右にIPv4アドレスを入力:")
-                        ipv4 = readlnOrNull()?.ifEmpty { null } ?: ipv4
-                        println("IPv4アドレス $ipv4 で続行します")
-                        val (TCPPorts, UDPPorts) = getPorts() ?: run {
+                        ipv4 = if (ipv4 == AUTO_IP) {
+                            try {
+                                InetAddress.getLocalHost().hostAddress
+                            } catch (e: Exception) {
+                                println("What The Fuck !?!?")
+                                throw e
+                            }
+                        } else ipv4
+
+                        if (ipv4.isBlank()) {
+
                             cp.stop()
                             cp.terminate()
-                            return
+                            throw IllegalArgumentException("IPアドレスが不正です")
                         }
+                        println("IPv4アドレス $ipv4 で続行します")
+                        if (tcpPorts.isEmpty() && udpPorts.isEmpty()) {
+                            cp.stop()
+                            cp.terminate()
+                            throw IllegalArgumentException("ポート指定しやがれ")
+                        }
+
 
                         println("UPnPのNAT設定してぶち開けるます")
                         Logger.setLogLevel(Logger.VERBOSE)
@@ -111,7 +134,7 @@ class Network : Subcommand("network", "ネットワークの設定をするま�
                         println("デバイス:${supportedDevices.first().device.ipAddress}のNATを設定します")
                         supportedDevices.first().findAction("AddPortMapping")!!.also { action ->
                             println("Action:AddPortMapping")
-                            TCPPorts.forEach {
+                            tcpPorts.forEach {
                                 println("TCP Open:$it")
                                 println(
                                     action.invokeSync(
@@ -127,7 +150,7 @@ class Network : Subcommand("network", "ネットワークの設定をするま�
                                     )
                                 )
                             }
-                            UDPPorts.forEach {
+                            udpPorts.forEach {
                                 println("UDP Open:$it")
                                 println(
                                     action.invokeSync(
@@ -148,10 +171,10 @@ class Network : Subcommand("network", "ネットワークの設定をするま�
                     }
                     Close -> {
                         println("閉じます")
-                        val (TCPPorts, UDPPorts) = getPorts() ?: run {
+                        if (tcpPorts.isEmpty() && udpPorts.isEmpty()) {
                             cp.stop()
                             cp.terminate()
-                            return
+                            throw IllegalArgumentException("ポート指定しやがれ")
                         }
                         println("対応デバイスを検索中")
                         cp.search("urn:schemas-upnp-org:service:WANPPPConnection:1")
@@ -162,7 +185,7 @@ class Network : Subcommand("network", "ネットワークの設定をするま�
                         println("デバイス:${supportedDevices.first().device.ipAddress}のNATを設定します")
                         supportedDevices.first().findAction("DeletePortMapping")!!.also { action ->
                             println("Action:DeletePortMapping")
-                            TCPPorts.forEach {
+                            tcpPorts.forEach {
                                 println("TCP Close:$it")
                                 println(
                                     action.invokeSync(
@@ -173,7 +196,7 @@ class Network : Subcommand("network", "ネットワークの設定をするま�
                                     )
                                 )
                             }
-                            UDPPorts.forEach {
+                            udpPorts.forEach {
                                 println("UDP Close:$it")
                                 println(
                                     action.invokeSync(
@@ -187,18 +210,67 @@ class Network : Subcommand("network", "ネットワークの設定をするま�
 
                         }
                     }
-                    else -> {}
+                    Check -> {
+                        println("ネットワーク環境のチェックをします")
+                        cp.search("urn:schemas-upnp-org:service:WANPPPConnection:1")
+                        while (supportedDevices.isEmpty()) {
+                            print("")
+                        }
+                        val device = supportedDevices.first().device
+                        println("対応デバイスが見つかりました")
+                        device.apply {
+                            println(
+                                """
+                            デバイス情報
+                            IP:$ipAddress
+                            UDN:$udn
+                            URL:$baseUrl
+                            UPC:$upc
+                            Type:$deviceType
+                            Location:$location
+                            Services:${serviceList.map { it.serviceType }}
+                            ModelName:$modelName
+                            Desc:$description
+                        """.trimIndent()
+                            )
+                        }
+
+                        println("デバイス:${device.ipAddress}に設定されます")
+                    }
+                    else->{}
                 }
                 println("Clean Up")
                 cp.stop()
                 cp.terminate()
             }
-            mode == DDNS -> {
+            mode == DDNS -> {//Dynamicで動的でDNSなドメインネームサーバー
+                println("D!D!N!S!")
+                if (ddnsNowUser.isEmpty() || ddnsNowPassword.isEmpty())
+                    throw IllegalArgumentException("ユーザー名かパスワードを指定しましょう")
+                val reqURL = "https://f5.si/update.php?domain=${ddnsNowUser}&password=${ddnsNowPassword}"
+                println("Requesting:$reqURL")
+                val client = OkHttpClient()
+
+                val request = Request.Builder()
+                    .url(reqURL)
+                    .build()
+
+                val r = try {
+                    val response = client.newCall(request).execute()
+                    response.body?.string()
+                } catch (e: IOException) {
+                    throw e
+                }
+                println(r)
+                if (r == null || r.contains("ERROR")) {
+                    println("エラーが発生しました。\nユーザー名やパスワードを確認しやがれください")
+                } else if (r.contains("OK")) {
+                    println("正常に更新しました。")
+                }
+
 
             }
-            mode == Check -> {
-                println("ネットワーク環境のチェックをします")
-            }
+
         }
         return
     }

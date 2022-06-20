@@ -1,4 +1,5 @@
-import SyncMode.*
+import SyncMode.Pull
+import SyncMode.Push
 import kotlinx.cli.ArgType
 import kotlinx.cli.ExperimentalCli
 import kotlinx.cli.Subcommand
@@ -7,10 +8,9 @@ import org.eclipse.jgit.api.CheckoutCommand
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.api.ResetCommand
 import org.eclipse.jgit.api.errors.CheckoutConflictException
-import org.eclipse.jgit.lib.*
+import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.eclipse.jgit.transport.PushResult
-import org.eclipse.jgit.transport.SshSessionFactory
 import org.eclipse.jgit.transport.SshTransport
 import org.eclipse.jgit.transport.sshd.SshdSessionFactory
 import java.io.File
@@ -76,15 +76,15 @@ class Sync(config: Config?) : Subcommand("sync", "ワールドを同期するま
                         
                     """.trimIndent()
                     )
-                    print("続行しますか (\"I can solve\"で続行/それ以外でPullをキャンセル(おすすめ、これ一択、これしかない) ):")
+                    print("続行しますか (\"I can solve\"で続行/それ以外でPullをキャンセル(当店おすすめ、これ一択、これしかない) ):")
                     if (readln() == "I can solve") {
                         println(
                             """
                             言ったな？？？解決しろよ？？？壊すなよ？？？
-                            ----コンフリクト解決モード----
-                            解消方法
+                            ❤️----コンフリクト解決モード----❤️
+                            解消方法を以下から選ぶがよい
                             (one)ローカルの変更を優先しコミット(もとに戻せる)(書き込み権限が必要です)
-                            (two)リモートの変更を優先し、自身の変更は破棄(今の変更内容は失われます)
+                            (two)リモートの変更を優先し、自身の変更は破棄(自分の変更内容は失われます)
                             (cancel)キャンセル
                         """.trimIndent()
                         )
@@ -98,6 +98,10 @@ class Sync(config: Config?) : Subcommand("sync", "ワールドを同期するま
                         when (selected) {
                             "one" -> {
                                 println("選択：(one)ローカルの変更を優先しコミット(自分の変更を保持できる)")
+                                val sshKey = File(sshKeyPath)
+                                if (!sshKey.isFile) {
+                                    throw IllegalArgumentException("SSHキーのパスが正しく設定されていません")
+                                }
                                 git.checkout().addPaths(e.conflictingPaths).setStage(CheckoutCommand.Stage.OURS).call()
                                 println("コンフリクトした愉快なメンバーたち")
                                 git.add().apply {
@@ -110,16 +114,10 @@ class Sync(config: Config?) : Subcommand("sync", "ワールドを同期するま
                                 git.commit().setSign(false).setMessage("[MSTools] コンフリクト解決 (強制ローカルプッシュ)")
                                     .setAuthor("MSTools", "mstools@naotiki-apps.xyz").call()
                                 println("Pushします")
-
-                                val sshKey = File(sshKeyPath)
-                                if (!sshKey.isFile) {
-                                    println("SSHキーのパスが正しく設定されていません")
-                                }
                                 try {
                                     superUltimateFinallyPowerfulPush(git)
                                 } catch (e: Exception) {
-                                    e.printStackTrace()
-                                    println("おめぇの(書き込み権限)ねーから！！！！！！")
+                                    println("おめぇの書き込み権限ねーから！！！！！！")
                                     println("ドッカン☆")
                                     throw e
                                 }
@@ -138,7 +136,7 @@ class Sync(config: Config?) : Subcommand("sync", "ワールドを同期するま
                         }
                     } else {
                         println("ナイスな判断！！")
-                        println("キャンセルしました。管理者に助けを求めましょう")
+                        println("キャンセルしました。必要なら管理者に助けを求めましょう")
                         return
                     }
                 } catch (e: Exception) {
@@ -153,7 +151,7 @@ class Sync(config: Config?) : Subcommand("sync", "ワールドを同期するま
                 val repo =
                     builder.setGitDir(local.resolve(Constants.DOT_GIT).toFile()).readEnvironment().findGitDir().build()
                 val git = Git(repo)
-                val commit=git.commit().setSign(false).setAll(true).setMessage("[MSTools] Sync").call()
+                git.commit().setSign(false).setAll(true).setMessage("[MSTools] Sync").setAuthor("MSTools", "mstools@naotiki-apps.xyz").call()
                 git.status().paths.forEach {
                     println(it)
                 }
@@ -164,6 +162,10 @@ class Sync(config: Config?) : Subcommand("sync", "ワールドを同期するま
     }
     //は？
     private fun superUltimateFinallyPowerfulPush(git:Git): MutableIterable<PushResult> {
+        val sshKey = File(sshKeyPath)
+        if (!sshKey.isFile) {
+            throw IllegalArgumentException("SSHキーのパスが正しく設定されていません")
+        }
         return git.push().setPushAll().setTransportConfigCallback {
             if (it is SshTransport) {
                 it.sshSessionFactory = object : SshdSessionFactory() {

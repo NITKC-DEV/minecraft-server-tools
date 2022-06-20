@@ -24,6 +24,7 @@ kotlin {
             implementation("org.eclipse.jgit:org.eclipse.jgit:6.1.0.202203080745-r")
             implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.apache:6.1.0.202203080745-r")
             implementation ("net.mm2d.mmupnp:mmupnp:3.1.3")
+            implementation("com.squareup.okhttp3:okhttp:4.10.0")
 
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.3.3")
         }
