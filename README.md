@@ -2,6 +2,8 @@
 Minecraftのサーバー公開に便利なツール
 
 Minecraftのポート開放(UPnPを使用したNAT越え)ができます
+
+JDKの自動インストールもできる！
 ## 動作環境
 Windows,Linux
 
@@ -23,4 +25,6 @@ Options:
 - DDNSの設定
 
 ## Build
-`gradle jpackage`
+`./gradlew jpackage`
+
+`build/jpackage/{windows,linux}/`にインストーラーやJarが生成されます。

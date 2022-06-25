@@ -14,33 +14,9 @@ enum class NetworkMode {
     Check,
 }
 
-@Deprecated("init専用にするのでそのうち移動", level = DeprecationLevel.WARNING)
-fun getPorts(): Pair<List<Int>, List<Int>>? {
-    println("TCPのポート番号を指定してください (Enterで変更せずに続行)")
-    print("複数開ける場合は\",\"で区切ってください (例:80,8080) :")
-    val t = readlnOrNull()?.split(",")?.map { it.toIntOrNull() }?.filterNotNull().orEmpty()
-    if (t.isEmpty()) {
-        println("TCPポートを設定しません")
-    } else {
-        println("次のポートが設定されます =>${t.joinToString(",")}")
-    }
-
-    print("UDPのポート番号を指定してください (Enterで変更せずに続行):")
-    val u = readlnOrNull()?.split(",")?.map { it.toIntOrNull() }?.filterNotNull().orEmpty()
-    if (u.isEmpty()) {
-        println("UDPポートを設定しません")
-    } else {
-        println("次のポートが設定されます =>${u.joinToString(",")}")
-    }
-    if (t.isEmpty() && u.isEmpty()) {
-        println("なにも設定されせん")
-        return null
-    }
-    return t to u
-}
 
 @ExperimentalCli
-class Network(config: Config?) : Subcommand("network", "ネットワークの設定をするこまーんど") {
+class Network(val config: Config?) : Subcommand("network", "ネットワークの設定をするこまーんど") {
 
     val mode by argument(ArgType.Choice<NetworkMode>(), "mode", "")
 
@@ -48,9 +24,8 @@ class Network(config: Config?) : Subcommand("network", "ネットワークの設
     var ipv4 by option(ArgType.String, "ipv4", "i", "ぶち開けるipv4アドレスを指定します").default(config?.ipAddress.orEmpty())
 
     var tcpPorts by option(ArgType.Int, "tcp", "t", "ぶち開けるTCPアドレスを指定 (','区切り)").delimiter(",")
-        .default(config?.tcpPorts.orEmpty())
     var udpPorts by option(ArgType.Int, "udp", "u", "ぶち開けるUDPアドレスを指定 (','区切り)").delimiter(",")
-        .default(config?.udpPorts.orEmpty())
+
 
     var ddnsNowUser by option(ArgType.String, "dnuser", "n", "DDNS now ユーザー名").default(config?.ddnsNowUser.orEmpty())
     var ddnsNowPassword by option(
@@ -115,9 +90,13 @@ class Network(config: Config?) : Subcommand("network", "ネットワークの設
                         }
                         println("IPv4アドレス $ipv4 で続行します")
                         if (tcpPorts.isEmpty() && udpPorts.isEmpty()) {
-                            cp.stop()
-                            cp.terminate()
-                            throw IllegalArgumentException("ポート指定しやがれ")
+                            tcpPorts=config?.tcpPorts.orEmpty()
+                            udpPorts=config?.udpPorts.orEmpty()
+                            if (tcpPorts.isEmpty()&&udpPorts.isEmpty()){
+                                cp.stop()
+                                cp.terminate()
+                                throw IllegalArgumentException("ポート指定しやがれ")
+                            }
                         }
 
 
@@ -134,37 +113,47 @@ class Network(config: Config?) : Subcommand("network", "ネットワークの設
                         println("デバイス:${supportedDevices.first().device.ipAddress}のNATを設定します")
                         supportedDevices.first().findAction("AddPortMapping")!!.also { action ->
                             println("Action:AddPortMapping")
-                            tcpPorts.forEach {
-                                println("TCP Open:$it")
-                                println(
-                                    action.invokeSync(
-                                        mapOf(
-                                            "NewExternalPort" to it.toString(),
-                                            "NewInternalPort" to it.toString(),
-                                            "NewEnabled" to "1",
-                                            "NewPortMappingDescription" to "*TEST* Minecraft Server Tools",
-                                            "NewProtocol" to "TCP",//UDP
-                                            "NewLeaseDuration" to "0",//seconds
-                                            "NewInternalClient" to ipv4
+                            try {
+                                tcpPorts.forEach {
+                                    println("TCP Open:$it")
+                                    println(
+                                        action.invokeSync(
+                                            mapOf(
+                                                "NewExternalPort" to it.toString(),
+                                                "NewInternalPort" to it.toString(),
+                                                "NewEnabled" to "1",
+                                                "NewPortMappingDescription" to "*TEST* Minecraft Server Tools",
+                                                "NewProtocol" to "TCP",//UDP
+                                                "NewLeaseDuration" to "0",//seconds
+                                                "NewInternalClient" to ipv4
+                                            )
                                         )
                                     )
-                                )
-                            }
-                            udpPorts.forEach {
-                                println("UDP Open:$it")
-                                println(
-                                    action.invokeSync(
-                                        mapOf(
-                                            "NewExternalPort" to it.toString(),
-                                            "NewInternalPort" to it.toString(),
-                                            "NewEnabled" to "1",
-                                            "NewPortMappingDescription" to "*TEST* Minecraft Server Tools",
-                                            "NewProtocol" to "UDP",//UDP
-                                            "NewLeaseDuration" to "0",//seconds
-                                            "NewInternalClient" to ipv4
+                                }
+                                udpPorts.forEach {
+                                    println("UDP Open:$it")
+                                    println(
+                                        action.invokeSync(
+                                            mapOf(
+                                                "NewExternalPort" to it.toString(),
+                                                "NewInternalPort" to it.toString(),
+                                                "NewEnabled" to "1",
+                                                "NewPortMappingDescription" to "*TEST* Minecraft Server Tools",
+                                                "NewProtocol" to "UDP",//UDP
+                                                "NewLeaseDuration" to "0",//seconds
+                                                "NewInternalClient" to ipv4
+                                            )
                                         )
                                     )
-                                )
+                                }
+                            } catch (e: IOException) {
+                                println("""
+                                    ポートがすでに別のIPで開けられている可能性があります。
+                                    mstools network closeを試して見ましょう
+                                """.trimIndent())
+                                throw e;
+                            } catch (e:Exception){
+                                throw e
                             }
 
                         }
@@ -172,9 +161,13 @@ class Network(config: Config?) : Subcommand("network", "ネットワークの設
                     Close -> {
                         println("閉じます")
                         if (tcpPorts.isEmpty() && udpPorts.isEmpty()) {
-                            cp.stop()
-                            cp.terminate()
-                            throw IllegalArgumentException("ポート指定しやがれ")
+                            tcpPorts=config?.tcpPorts.orEmpty()
+                            udpPorts=config?.udpPorts.orEmpty()
+                            if (tcpPorts.isEmpty()&&udpPorts.isEmpty()){
+                                cp.stop()
+                                cp.terminate()
+                                throw IllegalArgumentException("ポート指定しやがれ")
+                            }
                         }
                         println("対応デバイスを検索中")
                         cp.search("urn:schemas-upnp-org:service:WANPPPConnection:1")
