@@ -1,16 +1,10 @@
 import kotlinx.cli.*
 import kotlinx.serialization.json.Json
-import okhttp3.internal.closeQuietly
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
-import java.io.Console
-import java.io.InputStream
-import java.io.InputStreamReader
-import java.io.OutputStream
-import java.io.PipedInputStream
-import java.io.PipedReader
+import java.io.RandomAccessFile
 import java.lang.System.`in`
 import java.net.ServerSocket
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import kotlin.concurrent.thread
 import kotlin.io.path.Path
 import kotlin.io.path.absolutePathString
@@ -54,6 +48,9 @@ fun main(args: Array<String>) {
 
 
             val proccess = p.start()
+            val logFile=RandomAccessFile("MsToolsLog-${System.currentTimeMillis()}","rwd")
+
+
 
             /*TODO inputStreamを奪い合いしてる
             * TODO inputStreamをコピーする？もしくは２つそれぞれつくる
@@ -61,11 +58,10 @@ fun main(args: Array<String>) {
             * */
             val t = BridgeServer(ServerSocket(SOCKET_PORT).apply {
                 reuseAddress = true
-            }, proccess)//proccess.inputStream,proccess.outputStream)
+            }, logFile,proccess.outputStream)
             t.start()
 
 
-            val bufferRead = proccess.inputStream.bufferedReader()
 
             val a = object : Thread() {
                 val consoleRead = `in`.buffered()
@@ -99,19 +95,25 @@ fun main(args: Array<String>) {
             }
 
             a.start()
+
+
+
             proccess.onExit().thenApply {
                 println("Clean UP")
                 a.interrupt()
                 t.interrupt()
-                bufferRead.close()
+                proccess.outputStream.close()
+                proccess.inputStream.close()
+                logFile.close()
                 println("END")
             }
 
 
-
             var line: String? = null
-            while (bufferRead.readLine().also { line = it } != null) {
+            while (proccess.inputStream.bufferedReader().readLine().also { line = it } != null) {
                 println(line)
+                logFile.write((line!!+"\n").encodeToByteArray())
+
             }
 
 
