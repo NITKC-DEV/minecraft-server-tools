@@ -48,8 +48,7 @@ fun main(args: Array<String>) {
 
 
             val proccess = p.start()
-            val logFile=RandomAccessFile("MsToolsLog-${System.currentTimeMillis()}","rwd")
-
+            val logFile = RandomAccessFile("MsToolsLog-${System.currentTimeMillis()}", "rwd")
 
 
             /*TODO inputStreamを奪い合いしてる
@@ -58,9 +57,8 @@ fun main(args: Array<String>) {
             * */
             val t = BridgeServer(ServerSocket(SOCKET_PORT).apply {
                 reuseAddress = true
-            }, logFile,proccess.outputStream)
+            }, logFile, proccess.outputStream)
             t.start()
-
 
 
             val a = object : Thread() {
@@ -108,11 +106,11 @@ fun main(args: Array<String>) {
                 println("END")
             }
 
-
-            var line: String? = null
+            var line: String?
             while (proccess.inputStream.bufferedReader().readLine().also { line = it } != null) {
+
                 println(line)
-                logFile.write((line!!+"\n").encodeToByteArray())
+                logFile.write((line + "\n").encodeToByteArray())
 
             }
 

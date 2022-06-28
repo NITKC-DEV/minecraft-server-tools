@@ -22,11 +22,12 @@ class BridgeServer(
 
         println("Thread ${this.id}\n")
         try {
+
             socket = serverSocket.accept()
             val sin = socket.getInputStream()
             val sout = socket.getOutputStream()
-
             while (!isInterrupted) {
+
                 if (sin.available() != 0) {
                     println("Recive")
                     val readByteArray = mutableListOf<Byte>()
@@ -39,19 +40,27 @@ class BridgeServer(
                     } while (r != DATA_END.ordinal)
 
                     val msToolsProtocol = MSToolsProtocol.values()[readByteArray.first().toInt()]
-                    val result = readByteArray.drop(1).toByteArray().decodeToString()
+                    val result = readByteArray.drop(1).toByteArray()
                     println("PROTOCOL:$msToolsProtocol")
-                    println("RESULT:$result")
+                    println("RESULT:${result.decodeToString()}")
                     if (msToolsProtocol == GREETING) {//( ｀・∀・´)ﾉﾖﾛｼｸ
-                        var b: Byte
-                        val a = mutableListOf<Byte>()
-                        logFile.seek(0)
-                        while (logFile.read().also { b = it.toByte() } != -1) {
-                            a.add(b)
-                        }
-                        logFile.seek(logFile.length())
-                        sout.write(a.toByteArray())
-                        println(a)
+
+                        sout.write(logFileRead(0))
+                        sout.write(DATA_END.ordinal)
+                        sout.flush()
+                    } else if (msToolsProtocol == EXECUTE) {
+                        val p = logFile.length()
+                        outputStream.write(result)
+                        outputStream.write("\n".encodeToByteArray())
+                        outputStream.flush()
+                        println("---Wait!!!---")
+                        sleep(1000)//おやすみ
+                       /* while (p==logFile.length()){
+
+                        }//あたらしーかきこみ*/
+                        println("---End Waiting!!!---")
+
+                        sout.write(logFileRead(p))
                         sout.write(DATA_END.ordinal)
                         sout.flush()
                     }
@@ -63,6 +72,16 @@ class BridgeServer(
         }
     }
 
+    fun logFileRead(seek: Long): ByteArray {
+        var b: Byte
+        val a = mutableListOf<Byte>()
+        logFile.seek(seek)
+        while (logFile.read().also { b = it.toByte() } != -1) {
+            a.add(b)
+        }
+        logFile.seek(logFile.length())
+        return a.toByteArray()
+    }
 
     override fun interrupt() {
         serverSocket.close()
