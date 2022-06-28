@@ -29,13 +29,14 @@ class Sync(config: Config?) : Subcommand("sync", "ワールドを同期するま
         "local",
         "l",
         "リポジトリの同期先を指定するます"
-    ).default(config?.gitLocalRepo.orEmpty())
+    ).default(config?.serverDirectory.orEmpty())
     val remoteRepo by option(ArgType.String, "remote", "r", "リモートリポジトリのURL").default(config?.gitRemoteRepo.orEmpty())
     val sshKeyPath by option(
         ArgType.String,
         "key-path",
         description = "SSH秘密鍵のパス"
     ).default(config?.sshSecretKeyPath.orEmpty())
+
     override fun execute() {
         if (localServerPath.isEmpty() || remoteRepo.isEmpty()) {
             println("パスが無効です。")
@@ -67,7 +68,7 @@ class Sync(config: Config?) : Subcommand("sync", "ワールドを同期するま
                     git.pull().setRemote("origin").setRemoteBranchName("main").call()
                 } catch (e: CheckoutConflictException) {
                     e.printStackTrace()
-                    ultimateConflictSolver(e,repo, git)
+                    ultimateConflictSolver(e, repo, git)
                 } catch (e: Exception) {
                     println("ドッカン☆")
                     throw e
@@ -80,18 +81,18 @@ class Sync(config: Config?) : Subcommand("sync", "ワールドを同期するま
                 val repo =
                     builder.setGitDir(local.resolve(Constants.DOT_GIT).toFile()).readEnvironment().findGitDir().build()
                 val git = Git(repo)
-                git.commit().setSign(false).setAll(true).setMessage("[MSTools] Sync").setAuthor("MSTools", "mstools@naotiki-apps.xyz").call()
+                git.commit().setSign(false).setAll(true).setMessage("[MSTools] Sync")
+                    .setAuthor("MSTools", "mstools@naotiki-apps.xyz").call()
                 git.status().paths.forEach {
                     println(it)
                 }
 
                 try {
                     superUltimateFinallyPowerfulPush(git)
-                }catch (e:CheckoutConflictException){
+                } catch (e: CheckoutConflictException) {
                     e.printStackTrace()
-                    ultimateConflictSolver(e,repo, git)
-                }
-                catch (e: Exception) {
+                    ultimateConflictSolver(e, repo, git)
+                } catch (e: Exception) {
                     throw e
                 } finally {
                     git.close()
@@ -100,7 +101,8 @@ class Sync(config: Config?) : Subcommand("sync", "ワールドを同期するま
         }
 
     }
-    private fun ultimateConflictSolver(e:CheckoutConflictException, repo:Repository, git:Git){
+
+    private fun ultimateConflictSolver(e: CheckoutConflictException, repo: Repository, git: Git) {
         println(
             """
                         ----!警告!----
@@ -175,8 +177,9 @@ class Sync(config: Config?) : Subcommand("sync", "ワールドを同期するま
             return
         }
     }
+
     //は？
-    private fun superUltimateFinallyPowerfulPush(git:Git): MutableIterable<PushResult> {
+    private fun superUltimateFinallyPowerfulPush(git: Git): MutableIterable<PushResult> {
         val sshKey = File(sshKeyPath)
         if (!sshKey.isFile) {
             throw IllegalArgumentException("SSHキーのパスが正しく設定されていません")
@@ -194,6 +197,7 @@ class Sync(config: Config?) : Subcommand("sync", "ワールドを同期するま
                             null
                         }
                     }
+
                     override fun getDefaultIdentities(sshDir: File?): List<Path?> {
                         return listOf(privateKeyFile)
                     }
@@ -202,7 +206,6 @@ class Sync(config: Config?) : Subcommand("sync", "ワールドを同期するま
         }.call()
     }
 }
-
 
 
 enum class SyncMode {

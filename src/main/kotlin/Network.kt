@@ -5,6 +5,7 @@ import net.mm2d.upnp.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okio.IOException
+import java.io.InputStream
 import java.net.InetAddress
 
 enum class NetworkMode {
@@ -35,9 +36,12 @@ class Network(val config: Config?) : Subcommand("network", "ネットワーク�
         "DDNS now パスワード"
     ).default(config?.ddnsNowPassword.orEmpty())
 
+
+    val ultimateCheck by option(ArgType.Boolean, "ultimate-check", "C", "サポートされていないデバイスも出力します。").default(false)
+
     override fun execute() {
         when {
-            (mode == Open) || (mode == Close) || (mode == Check) -> {
+            (mode == Open) || (mode == Close) -> {
                 val supportedDevices = mutableListOf<Service>()
                 val cp = ControlPointFactory.create(Protocol.IP_V4_ONLY).also { cp ->
                     cp.addDiscoveryListener(object : ControlPoint.DiscoveryListener {
@@ -47,6 +51,7 @@ class Network(val config: Config?) : Subcommand("network", "ネットワーク�
                             findServiceByType("urn:schemas-upnp-org:service:WANPPPConnection:1")
                                 ?: findServiceByType("urn:schemas-upnp-org:service:WANIPConnection:1")
                         }
+
                         override fun onDiscover(device: Device) {
 
                             getService(device)?.let {
@@ -90,9 +95,9 @@ class Network(val config: Config?) : Subcommand("network", "ネットワーク�
                         }
                         println("IPv4アドレス $ipv4 で続行します")
                         if (tcpPorts.isEmpty() && udpPorts.isEmpty()) {
-                            tcpPorts=config?.tcpPorts.orEmpty()
-                            udpPorts=config?.udpPorts.orEmpty()
-                            if (tcpPorts.isEmpty()&&udpPorts.isEmpty()){
+                            tcpPorts = config?.tcpPorts.orEmpty()
+                            udpPorts = config?.udpPorts.orEmpty()
+                            if (tcpPorts.isEmpty() && udpPorts.isEmpty()) {
                                 cp.stop()
                                 cp.terminate()
                                 throw IllegalArgumentException("ポート指定しやがれ")
@@ -105,6 +110,7 @@ class Network(val config: Config?) : Subcommand("network", "ネットワーク�
                         //Logger.setSender(Senders.create())
 
                         println("対応デバイスを検索中")
+
                         cp.search("urn:schemas-upnp-org:service:WANPPPConnection:1")
                         while (supportedDevices.isEmpty()) {
                             print("")
@@ -147,12 +153,14 @@ class Network(val config: Config?) : Subcommand("network", "ネットワーク�
                                     )
                                 }
                             } catch (e: IOException) {
-                                println("""
+                                println(
+                                    """
                                     ポートがすでに別のIPで開けられている可能性があります。
                                     mstools network closeを試して見ましょう
-                                """.trimIndent())
+                                """.trimIndent()
+                                )
                                 throw e;
-                            } catch (e:Exception){
+                            } catch (e: Exception) {
                                 throw e
                             }
 
@@ -161,9 +169,9 @@ class Network(val config: Config?) : Subcommand("network", "ネットワーク�
                     Close -> {
                         println("閉じます")
                         if (tcpPorts.isEmpty() && udpPorts.isEmpty()) {
-                            tcpPorts=config?.tcpPorts.orEmpty()
-                            udpPorts=config?.udpPorts.orEmpty()
-                            if (tcpPorts.isEmpty()&&udpPorts.isEmpty()){
+                            tcpPorts = config?.tcpPorts.orEmpty()
+                            udpPorts = config?.udpPorts.orEmpty()
+                            if (tcpPorts.isEmpty() && udpPorts.isEmpty()) {
                                 cp.stop()
                                 cp.terminate()
                                 throw IllegalArgumentException("ポート指定しやがれ")
@@ -203,17 +211,76 @@ class Network(val config: Config?) : Subcommand("network", "ネットワーク�
 
                         }
                     }
-                    Check -> {
-                        println("ネットワーク環境のチェックをします")
-                        cp.search("urn:schemas-upnp-org:service:WANPPPConnection:1")
-                        while (supportedDevices.isEmpty()) {
-                            print("")
+
+                    else -> {}
+                }
+                println("Clean Up")
+                cp.stop()
+                cp.terminate()
+            }
+            mode == Check -> {
+                if (ultimateCheck) println("Ultimate Check")
+
+                val supportedDevices = mutableListOf<Device>()
+                val listener=object : ControlPoint.DiscoveryListener {
+                    fun getService(device: Device) = device.findDeviceByTypeRecursively(
+                        "urn:schemas-upnp-org:device:WANConnectionDevice:1"
+                    )?.run {
+                        findServiceByType("urn:schemas-upnp-org:service:WANPPPConnection:1")
+                            ?: findServiceByType("urn:schemas-upnp-org:service:WANIPConnection:1")
+                    }
+
+                    override fun onDiscover(device: Device) {
+                        if (ultimateCheck) {
+                            supportedDevices.add(device)
+                            return
                         }
-                        val device = supportedDevices.first().device
-                        println("対応デバイスが見つかりました")
+
+                        getService(device)?.let {
+                            if (it.findAction("AddPortMapping") != null &&
+                                it.findAction("DeletePortMapping") != null
+                            ) {
+                                //NATいけるデバイス
+                                println("発見:${device.udn}")
+                                supportedDevices.add(device)
+                            }
+                        }
+                    }
+
+                    override fun onLost(device: Device) {
+                        println("切断:${device.udn}")
+                        supportedDevices.remove(device)
+                    }
+
+                }
+                val cp = ControlPointFactory.create(Protocol.IP_V4_ONLY).also { cp ->
+                    cp.addDiscoveryListener(listener)
+                    cp.initialize()
+                    cp.start()
+                }
+                println("""
+                    ネットワーク環境のチェックをします。
+                    exitで終了
+                    """.trimIndent())
+               // cp.search("urn:schemas-upnp-org:service:WANIPConnection:1")
+                if (ultimateCheck){
+                    cp.search()
+                }else{
+
+                    cp.search("urn:schemas-upnp-org:service:WANPPPConnection:1")
+                }
+
+                val inputStream=System.`in`.bufferedReader()
+
+                while (!inputStream.ready()||(inputStream.readLine()!="exit")) {
+
+                    while (supportedDevices.isNotEmpty()) {
+                        val device = supportedDevices.first()
+
                         device.apply {
                             println(
                                 """
+                            デバイスが見つかりました
                             デバイス情報
                             IP:$ipAddress
                             UDN:$udn
@@ -227,14 +294,16 @@ class Network(val config: Config?) : Subcommand("network", "ネットワーク�
                         """.trimIndent()
                             )
                         }
-
-                        println("デバイス:${device.ipAddress}に設定されます")
+                        supportedDevices.remove(device)
                     }
-                    else->{}
+                    print("")
                 }
-                println("Clean Up")
+                println("Clean Up - ｷﾚｲｷﾚｲ (Wait a minute)")
+                cp.removeDiscoveryListener(listener)
+                cp.clearDeviceList()
                 cp.stop()
                 cp.terminate()
+                return
             }
             mode == DDNS -> {//Dynamicで動的でDNSなドメインネームサーバー
                 println("D!D!N!S!")
