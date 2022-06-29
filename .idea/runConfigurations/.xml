@@ -1,0 +1,8 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="クソデカリリース準備ビルド" type="CompoundRunConfigurationType">
+    <toRun name="Jpackage Linux" type="GradleRunConfiguration" />
+    <toRun name="Jpackage Windows" type="GradleRunConfiguration" />
+    <toRun name="minecraft-server-tools [clean]" type="GradleRunConfiguration" />
+    <method v="2" />
+  </configuration>
+</component>

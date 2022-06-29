@@ -1,286 +1,196 @@
-import NetworkMode.*
 import kotlinx.cli.*
-import net.mm2d.log.Logger
-import net.mm2d.upnp.ControlPoint.DiscoveryListener
-import net.mm2d.upnp.ControlPointFactory
-import net.mm2d.upnp.Device
-import net.mm2d.upnp.Protocol
-import net.mm2d.upnp.Service
-import org.eclipse.jgit.api.Git
-import org.eclipse.jgit.lib.Constants
-import org.eclipse.jgit.lib.Repository
-import org.eclipse.jgit.storage.file.FileRepositoryBuilder
-import org.eclipse.jgit.transport.SshSessionFactory
-import org.eclipse.jgit.transport.SshTransport
-import org.eclipse.jgit.transport.sshd.SshdSessionFactory
-import java.io.File
-import java.io.IOException
-import java.net.InetAddress
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.Paths
+import kotlinx.serialization.json.Json
+import okio.source
+import java.io.RandomAccessFile
+import java.lang.System.`in`
+import java.net.ServerSocket
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import kotlin.concurrent.thread
+import kotlin.io.path.Path
+import kotlin.io.path.absolutePathString
+
+
+//じぇーそんのフォーマット
+private val json = Json {
+    prettyPrint = true
+    encodeDefaults = true
+}
+
+fun prompt(question: String): String? {
+    print(question)
+    return readlnOrNull()?.ifEmpty { null }
+}
 
 @ExperimentalCli
 fun main(args: Array<String>) {
     //ぼくのかんがえたさいきょうのなまえ
-    println("Super Ultimate Max Large Big Long Ultra Powerful Useful Helpful Minecraft Server Tools Version Perfect Stable Created by @naotikikt")
+    println(
+        "Super Turbo Intelligent Ultimate Dynamite Max Large Big Long Ultra Powerful Useful Helpful Better Best Good God Delicious Beautiful Most Much Many Strong String Extend Infinity Legend Plus Power Fire Final Protected Defender Minecraft Server Tools Version Really Perfect Stable Long Term Support Professional Enterprise Edition"
+    )
     val parser = ArgParser("mstools")
+    val isInitialized = configFile.exists()
+    val config = if (isInitialized) Config.readConfig() else null
 
     class Debug : Subcommand("debug", "デバッグ用") {
-        override fun execute() {
-
-        }
-
-    }
-
-    class Sync : Subcommand("sync", "ワールドを同期するます") {
-        val repoPath by option(ArgType.String, "repo", "r", "リポジトリの同期先を指定するます").default(Paths.get("").toString())
-        val sshKeyPath by option(ArgType.String, "key-path", description = "SSH鍵のパスを指定します。")
-        var result: Int = 0
+        val serverFile by argument(ArgType.String, "ServerFile", "マイクラサーバーのJarファイルを指定しましょう").optional()
+            .default(config?.serverJar.orEmpty())
 
         override fun execute() {
-            val builder = FileRepositoryBuilder()
-            val repository: Repository =
-                builder.setGitDir(File(repoPath + Constants.DOT_GIT)).readEnvironment().findGitDir().build()
-
-            val git = Git(repository)
-
-            git.push().setTransportConfigCallback {
-                if (it is SshTransport) {
-                    it.sshSessionFactory = sshSessionFactory
-                }
-            }.call()
-        }
-    }
-
-    class Network : Subcommand("network", "ネットワークの設定をするます") {
-
-        val mode by argument(ArgType.Choice<NetworkMode>(), "mode")
-
-
-        var ipv4 by option(ArgType.String, "ipv4", "i", "ぶち開けるipv4アドレスを指定します")
-        override fun execute() {
-            when {
-                (mode == Open) || (mode == Close) -> {
-                    val supportedDevices = mutableListOf<Service>()
-                    val cp = ControlPointFactory.create(Protocol.IP_V4_ONLY).also { cp ->
-                        cp.addDiscoveryListener(object : DiscoveryListener {
-                            fun getService(device: Device) = device.findDeviceByTypeRecursively(
-                                "urn:schemas-upnp-org:device:WANConnectionDevice:1"
-                            )?.run {
-                                findServiceByType("urn:schemas-upnp-org:service:WANPPPConnection:1")
-                                    ?: findServiceByType("urn:schemas-upnp-org:service:WANIPConnection:1")
-                            }
-
-                            override fun onDiscover(device: Device) {
-
-                                getService(device)?.let {
-                                    if (it.findAction("AddPortMapping") != null &&
-                                        it.findAction("DeletePortMapping") != null
-                                    ) {
-                                        //NATいけるデバイス
-                                        println("発見:${device.udn}")
-                                        supportedDevices.add(it)
-                                    }
-                                }
-                            }
-
-                            override fun onLost(device: Device) {
-                                println("切断:${device.udn}")
-                                supportedDevices.remove(getService(device))
-                            }
-
-                        })
-                        cp.initialize()
-                        cp.start()
-                    }
-
-                    fun getPorts(): Pair<List<Int>, List<Int>>? {
-                        println("TCPのポート番号を指定してください (Enterで開けずに続行)")
-                        print("複数開ける場合は\",\"で区切ってください (例:80,8080) :")
-                        val t = readlnOrNull()?.split(",")?.map { it.toIntOrNull() }?.filterNotNull().orEmpty()
-                        if (t.isEmpty()) {
-                            println("TCPポートを設定しません")
-                        } else {
-                            println("次のポートが設定されます =>${t.joinToString(",")}")
-                        }
-
-                        print("UDPのポート番号を指定してください (Enterで開けずに続行):")
-                        val u = readlnOrNull()?.split(",")?.map { it.toIntOrNull() }?.filterNotNull().orEmpty()
-                        if (u.isEmpty()) {
-                            println("UDPポートを設定しません")
-                        } else {
-                            println("次のポートが設定されます =>${u.joinToString(",")}")
-                        }
-                        if (t.isEmpty() && u.isEmpty()) {
-                            println("何しに来たの？？？？？？？？帰れ")//辛辣
-                            return null
-                        }
-                        return t to u
-                    }
-                    when (mode) {
-                        Open -> {
-                            ipv4 = ipv4 ?: try {
-                                InetAddress.getLocalHost().hostAddress
-                            } catch (e: Exception) {
-                                println("What The Fuck !?!?")
-                                throw e
-                            }
-                            println("IPv4アドレス:$ipv4")
-                            print("Enterで続行 変更する場合は右にIPv4アドレスを入力:")
-                            ipv4 = readlnOrNull()?.ifEmpty { null } ?: ipv4
-                            println("IPv4アドレス $ipv4 で続行します")
-                            val (TCPPorts, UDPPorts) = getPorts() ?: run {
-                                cp.stop()
-                                cp.terminate()
-                                return
-                            }
-
-                            println("UPnPのNAT設定してぶち開けるます")
-                            Logger.setLogLevel(Logger.VERBOSE)
-                            //Logger.setSender(Senders.create())
-
-                            println("対応デバイスを検索中")
-                            cp.search("urn:schemas-upnp-org:service:WANPPPConnection:1")
-                            while (supportedDevices.isEmpty()) {
-                                print("")
-                            }
-                            println("対応デバイスが見つかりました")
-                            println("デバイス:${supportedDevices.first().device.ipAddress}のNATを設定します")
-                            supportedDevices.first().findAction("AddPortMapping")!!.also { action ->
-                                println("Action:AddPortMapping")
-                                TCPPorts.forEach {
-                                    println("TCP Open:$it")
-                                    println(
-                                        action.invokeSync(
-                                            mapOf(
-                                                "NewExternalPort" to it.toString(),
-                                                "NewInternalPort" to it.toString(),
-                                                "NewEnabled" to "1",
-                                                "NewPortMappingDescription" to "*TEST* Minecraft Server Tools",
-                                                "NewProtocol" to "TCP",//UDP
-                                                "NewLeaseDuration" to "0",//seconds
-                                                "NewInternalClient" to ipv4
-                                            )
-                                        )
-                                    )
-                                }
-                                UDPPorts.forEach {
-                                    println("UDP Open:$it")
-                                    println(
-                                        action.invokeSync(
-                                            mapOf(
-                                                "NewExternalPort" to it.toString(),
-                                                "NewInternalPort" to it.toString(),
-                                                "NewEnabled" to "1",
-                                                "NewPortMappingDescription" to "*TEST* Minecraft Server Tools",
-                                                "NewProtocol" to "UDP",//UDP
-                                                "NewLeaseDuration" to "0",//seconds
-                                                "NewInternalClient" to ipv4
-                                            )
-                                        )
-                                    )
-                                }
-
-                            }
-                        }
-                        Close -> {
-                            println("閉じます")
-                            val (TCPPorts, UDPPorts) = getPorts() ?: run {
-                                cp.stop()
-                                cp.terminate()
-                                return
-                            }
-                            println("対応デバイスを検索中")
-                            cp.search("urn:schemas-upnp-org:service:WANPPPConnection:1")
-                            while (supportedDevices.isEmpty()) {
-                                print("")
-                            }
-                            println("対応デバイスが見つかりました")
-                            println("デバイス:${supportedDevices.first().device.ipAddress}のNATを設定します")
-                            supportedDevices.first().findAction("DeletePortMapping")!!.also { action ->
-                                println("Action:DeletePortMapping")
-                                TCPPorts.forEach {
-                                    println("TCP Close:$it")
-                                    println(
-                                        action.invokeSync(
-                                            mapOf(
-                                                "NewExternalPort" to it.toString(),
-                                                "NewProtocol" to "TCP",//UDP
-                                            )
-                                        )
-                                    )
-                                }
-                                UDPPorts.forEach {
-                                    println("UDP Close:$it")
-                                    println(
-                                        action.invokeSync(
-                                            mapOf(
-                                                "NewExternalPort" to it.toString(),
-                                                "NewProtocol" to "UDP",//UDP
-                                            )
-                                        )
-                                    )
-                                }
-
-                            }
-                        }
-                        else -> {}
-                    }
-                    println("Clean Up")
-                    cp.stop()
-                    cp.terminate()
-                }
-                mode == DDNS -> TODO()
-                mode == Check -> TODO()
+            if (serverFile.isEmpty()) {
+                throw IllegalArgumentException("サーバーファイルを指定しましょう")
             }
-            return
+            val path = Path(serverFile).absolutePathString()
+            val p = ProcessBuilder("java", "-jar", path, "-nogui")
+            println("Run: ${p.command().joinToString(" ")}")
+            p.environment()
+            p.redirectInput(ProcessBuilder.Redirect.PIPE)
+            p.redirectOutput(ProcessBuilder.Redirect.PIPE)
+
+
+            val proccess = p.start()
+            val logFile = RandomAccessFile("MsToolsLog-${System.currentTimeMillis()}", "rwd")
+
+
+            /*TODO inputStreamを奪い合いしてる
+            * TODO inputStreamをコピーする？もしくは２つそれぞれつくる
+            * TODO BridgeServerにすべてバイパスさせる。---Agree!
+            * */
+            val t = BridgeServer(ServerSocket(SOCKET_PORT).apply {
+                reuseAddress = true
+            }, logFile, proccess.outputStream)
+            t.start()
+            val a = object : Thread() {
+                val consoleRead = `in`.buffered()
+                val out = proccess.outputStream.bufferedWriter()
+                override fun run() {
+                    println("Started")
+                    while (!isInterrupted) {
+                        if (consoleRead.available() > 0) {
+                            val bytes = mutableListOf<Byte>()
+                            var byte: Byte = 0
+                            while (!bytes.toByteArray().decodeToString()
+                                    .contains("\r\n|[\n\r\u2028\u2029\u0085]".toRegex()) && consoleRead.read()
+                                    .also { byte = it.toByte() } != -1
+                            ) {
+                                bytes.add(byte)
+                            }
+                            val line = bytes.toByteArray().decodeToString()
+                            out.write(line)
+                            out.flush()
+                        }
+                    }
+                }
+                override fun interrupt() {
+                    out.close()
+                    super.interrupt()
+                }
+            }
+            a.start()
+            proccess.onExit().thenApply {
+                println("Clean UP")
+                a.interrupt()
+                t.interrupt()
+                proccess.outputStream.close()
+                proccess.inputStream.close()
+                logFile.close()
+                println("END")
+            }
+
+            val bufferedReader = proccess.inputStream.bufferedReader()
+            var line:String
+            while (bufferedReader.readLine().also { line =it}!=null){
+                println(line)
+                logFile.write((line+"\n").encodeToByteArray())
+            }
         }
     }
 
-    val sync = Sync()
+    class Initialize : Subcommand("init", "設定ファイルをプロンプト形式で生成して初期化します") {
+        val default by option(ArgType.Boolean, "default", "d", "質問なしで設定ファイルを生成します").default(false)
+        override fun execute() {
+            if (isInitialized) {
+                println(
+                    """
+                    すでに初期化されています。
+                    ${configFile.absolutePath}を削除するか直接中身を書き換えてください
+                """.trimIndent()
+                )
+            } else {
+                println(
+                    """
+                    設定ファイルを生成します
+                    ${configFile.absolutePath}が生成されます
+                """.trimIndent()
+                )
+                val outFile = configFile.outputStream()
+                val conf = if (!default) {
+                    //Git設定
+                    val serverDirectory = prompt("同期するディレクトリの（絶対・相対）パスを入力(設定しない場合はそのままEnter):") ?: "./"
+                    val gitRemoteRepo = prompt("GitリポジトリURLを入力 (設定しない場合はそのままEnter):")
+                    val sshKeyPath = if (gitRemoteRepo != null) {
+                        prompt("管理者から渡されたSSHキーを置いた（絶対・相対）パスを入力 (設定しない場合はそのままEnter):")
+                    } else null
+                    //DDNS now設定
+                    val ddnsName = prompt("DDNS nowユーザー名を入力 (設定しない場合はそのままEnter):")
+                    val ddnsPassword = if (ddnsName != null) {
+                        prompt("DDNS nowパスワード(APIトークン)を入力 (設定しない場合はそのままEnter):")
+                    } else null
+                    val ipAddress = prompt("サーバーのIPv4アドレスを入力（デフォルトでは自動で設定されます）:") ?: AUTO_IP
+                    println("TCPのポート番号を指定してください (Enterで変更せずに続行)")
+                    print("複数開ける場合は\",\"で区切ってください (例:80,8080) :")
+                    val tcp = readlnOrNull()?.split(",")?.map { it.toIntOrNull() }?.filterNotNull().orEmpty()
+                    if (tcp.isEmpty()) {
+                        println("TCPポートを設定しません")
+                    } else {
+                        println("次のポートが設定されます =>${tcp.joinToString(",")}")
+                    }
+
+                    print("UDPのポート番号を指定してください (Enterで変更せずに続行):")
+                    val udp = readlnOrNull()?.split(",")?.map { it.toIntOrNull() }?.filterNotNull().orEmpty()
+                    if (udp.isEmpty()) {
+                        println("UDPポートを設定しません")
+                    } else {
+                        println("次のポートが設定されます =>${udp.joinToString(",")}")
+                    }
+                    if (tcp.isEmpty() && udp.isEmpty()) {
+                        println("なにも設定されせん")
+                    }
+
+                    val jarFile = prompt("マイクラサーバーのJARのパスを入力:")
+                    val jvmArgs = prompt("サーバー起動時のJVM引数を入力「,」区切り(デフォルトでは$DEFAULT_ARGS):")?.split(",") ?: DEFAULT_ARGS
+
+                    Config(
+                        serverDirectory,
+                        gitRemoteRepo,
+                        sshKeyPath,
+                        ddnsName,
+                        ddnsPassword,
+                        ipAddress,
+                        tcp,
+                        udp,
+                        jarFile,
+                        jvmArgs,
+                    )
+
+                } else Config()
+                outFile.write(json.encodeToString(Config.serializer(), conf).encodeToByteArray())
+                outFile.close()
+            }
+            println("設定ファイルの詳しい書き方は https://github.com/NITKC22s/minecraft-server-tools/tree/master/docs/ConfigFile.md を見てください")
+        }
+
+    }
+
+
+    val sync = Sync(config)
     val debug = Debug()
-    val network = Network()
-    parser.subcommands(sync, debug, network)
+    val network = Network(config)
+    val init = Initialize()
+    val connect = Connect()
+    parser.subcommands(sync, debug, network, init, connect)
     parser.parse(args)
     return
 }
 
-var sshSessionFactory: SshSessionFactory =
-    object : SshdSessionFactory() {
-        val SSH_DIR: Path = Path.of("")/* TODO(Super Max SSH Path) */
 
-        private var privateKeyFile: Path? = null
-        private var sshKey: ByteArray = byteArrayOf()
-
-        fun CustomSshSessionFactory(sshKey: ByteArray) {
-            this.sshKey = sshKey
-            privateKeyFile = Path.of("mstools", SSH_DIR.toString())
-        }
-
-        override fun getSshDirectory(): File? {
-            return try {
-                Files.createDirectories(SSH_DIR).toFile()
-            } catch (e: IOException) {
-                e.printStackTrace()
-                null
-            }
-        }
-
-        override fun getDefaultIdentities(sshDir: File?): List<Path?>? {
-            try {
-                Files.write(privateKeyFile, sshKey)
-                return listOf(privateKeyFile)
-            } catch (e: IOException) {
-                e.printStackTrace()
-            }
-            return emptyList<Path>()
-        }
-    }
-
-enum class NetworkMode {
-    Open,
-    Close,
-    DDNS,
-    Check,
-}
