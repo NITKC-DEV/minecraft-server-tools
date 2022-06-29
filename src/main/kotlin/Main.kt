@@ -1,5 +1,6 @@
 import kotlinx.cli.*
 import kotlinx.serialization.json.Json
+import okio.source
 import java.io.RandomAccessFile
 import java.lang.System.`in`
 import java.net.ServerSocket
@@ -59,8 +60,6 @@ fun main(args: Array<String>) {
                 reuseAddress = true
             }, logFile, proccess.outputStream)
             t.start()
-
-
             val a = object : Thread() {
                 val consoleRead = `in`.buffered()
                 val out = proccess.outputStream.bufferedWriter()
@@ -82,20 +81,12 @@ fun main(args: Array<String>) {
                         }
                     }
                 }
-
                 override fun interrupt() {
-                    //consoleRead.close()
                     out.close()
-
                     super.interrupt()
-
                 }
             }
-
             a.start()
-
-
-
             proccess.onExit().thenApply {
                 println("Clean UP")
                 a.interrupt()
@@ -106,19 +97,12 @@ fun main(args: Array<String>) {
                 println("END")
             }
 
-            var line: String?
-            while (proccess.inputStream.bufferedReader().readLine().also { line = it } != null) {
-
+            val bufferedReader = proccess.inputStream.bufferedReader()
+            var line:String
+            while (bufferedReader.readLine().also { line =it}!=null){
                 println(line)
-                logFile.write((line + "\n").encodeToByteArray())
-
+                logFile.write((line+"\n").encodeToByteArray())
             }
-
-
-            //  proccess.waitFor()
-
-            // ProcessHandle.of(0).stream()
-
         }
     }
 

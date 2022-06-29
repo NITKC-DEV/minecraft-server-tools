@@ -48,10 +48,9 @@ class Connect : Subcommand("connect", "Minecraft ServerにSocket通信します"
             } while (i != DATA_END.ordinal)
             println(readByteArray.toByteArray().decodeToString())
         }
-
+        inputStream.close()
+        outputStream.close()
         socket.close()
-
-
     }
 
     private fun OutputStream.dataWrite(type: MSToolsProtocol, data: ByteArray? = null) {

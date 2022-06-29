@@ -1,4 +1,5 @@
 import MSToolsProtocol.*
+import okhttp3.internal.isHealthy
 import java.io.BufferedReader
 import java.io.InputStream
 import java.io.OutputStream
@@ -9,25 +10,21 @@ import java.net.ServerSocket
 import java.net.Socket
 
 //CAD!CAD!CAD!CAD!
-const val SOCKET_PORT = 0xCAD
+const val SOCKET_PORT = 0xCAD//3245
 
 //橋！
 class BridgeServer(
     val serverSocket: ServerSocket,
     val logFile: RandomAccessFile, val outputStream: OutputStream
-) :
-    Thread() {
+) : Thread() {
     lateinit var socket: Socket
     override fun run() {
-
         println("Thread ${this.id}\n")
         try {
-
             socket = serverSocket.accept()
-            val sin = socket.getInputStream()
-            val sout = socket.getOutputStream()
+            var sin = socket.getInputStream()
+            var sout = socket.getOutputStream()
             while (!isInterrupted) {
-
                 if (sin.available() != 0) {
                     println("Recive")
                     val readByteArray = mutableListOf<Byte>()
@@ -38,13 +35,11 @@ class BridgeServer(
                             readByteArray.add(r.toByte())
                         }
                     } while (r != DATA_END.ordinal)
-
                     val msToolsProtocol = MSToolsProtocol.values()[readByteArray.first().toInt()]
                     val result = readByteArray.drop(1).toByteArray()
                     println("PROTOCOL:$msToolsProtocol")
                     println("RESULT:${result.decodeToString()}")
                     if (msToolsProtocol == GREETING) {//( ｀・∀・´)ﾉﾖﾛｼｸ
-
                         sout.write(logFileRead(0))
                         sout.write(DATA_END.ordinal)
                         sout.flush()
@@ -55,16 +50,20 @@ class BridgeServer(
                         outputStream.flush()
                         println("---Wait!!!---")
                         sleep(1000)//おやすみ
-                       /* while (p==logFile.length()){
-
-                        }//あたらしーかきこみ*/
                         println("---End Waiting!!!---")
-
                         sout.write(logFileRead(p))
                         sout.write(DATA_END.ordinal)
                         sout.flush()
                     }
                 }
+
+                if (!socket.isConnected) {
+                    println("Closed")
+                    socket = serverSocket.accept()
+                    sin = socket.getInputStream()
+                    sout = socket.getOutputStream()
+                }
+
             }
         } catch (e: Exception) {
             e.printStackTrace()
